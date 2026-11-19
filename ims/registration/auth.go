@@ -108,7 +108,7 @@ func (s *Registrar) calculateRegisterAuthorization(ctx context.Context, challeng
 	}
 	result, err := security.BuildAKAAuthorization(ctx, akaProvider{
 		card:       s.card,
-		group:      s.group,
+		group:      s.akaGroup,
 		preference: s.cfg.RegistrationPreference,
 	}, security.Identity{
 		PrivateIdentity: s.State().PrivateIdentity,

@@ -153,6 +153,7 @@ func (c *Client) buildRegistrationConfig(cfg ServiceConfig, security imsSecurity
 		IMEI:                      cfg.IMEI,
 		AuthAlgorithm:             cfg.AuthAlgorithm,
 		RegistrationGroup:         cfg.RegistrationGroup,
+		AKAGroup:                  c.akaGroup,
 		RegistrationID:            cfg.RegistrationID,
 		RegistrationPreference:    cfg.RegistrationPreference,
 		IPSecIntegrityAlgorithms:  cfg.IPSecIntegrityAlgorithms,

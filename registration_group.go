@@ -20,12 +20,21 @@ func NewRegistrationGroup() *registration.Group {
 	return &registration.Group{}
 }
 
-func (c ServiceConfig) coordinatedAKA(authenticate func(context.Context, []byte, []byte) (usim.AKAResult, error)) func(context.Context, []byte, []byte) (usim.AKAResult, error) {
-	if c.RegistrationGroup == nil {
+// coordinatedAKA runs authenticate one USIM AKA at a time. wwan-go locks each
+// APDU, but AKA is a SELECT/AUTHENTICATE/GET RESPONSE sequence that must not
+// interleave with another AKA on the same card. A configured RegistrationGroup
+// also orders AKA across Clients; otherwise the Client's own group serializes
+// its registration, tunnels, and WFC checks.
+func (c *Client) coordinatedAKA(cfg ServiceConfig, authenticate func(context.Context, []byte, []byte) (usim.AKAResult, error)) func(context.Context, []byte, []byte) (usim.AKAResult, error) {
+	group := cfg.RegistrationGroup
+	if group == nil {
+		group = c.akaGroup
+	}
+	if group == nil {
 		return authenticate
 	}
 	return func(ctx context.Context, rand, autn []byte) (usim.AKAResult, error) {
-		release, err := c.RegistrationGroup.BeginAKA(ctx, c.RegistrationPreference)
+		release, err := group.BeginAKA(ctx, cfg.RegistrationPreference)
 		if err != nil {
 			return usim.AKAResult{}, fmt.Errorf("waiting for USIM AKA access: %w", err)
 		}

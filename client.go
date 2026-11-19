@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/damonto/ims-go/ims/registration"
 	imsussd "github.com/damonto/ims-go/ims/ussd"
 	usim "github.com/damonto/wwan-go/sim"
 	usimcard "github.com/damonto/wwan-go/sim/card"
@@ -30,9 +31,12 @@ type Card interface {
 }
 
 type Client struct {
-	cfg             Config
-	card            Card
-	reader          usimcard.Reader
+	cfg    Config
+	card   Card
+	reader usimcard.Reader
+	// akaGroup serializes USIM AKA across this Client's registration, SWu
+	// tunnels, and WFC checks when IMS.RegistrationGroup is not configured.
+	akaGroup        *registration.Group
 	logger          *slog.Logger
 	interfaceByName func(string) (*net.Interface, error)
 
@@ -78,6 +82,7 @@ func newClient(cfg Config) *Client {
 		cfg:             cfg,
 		logger:          cfg.Logger.With("component", "ims-go"),
 		interfaceByName: net.InterfaceByName,
+		akaGroup:        NewRegistrationGroup(),
 		state: clientState{
 			done:   make(chan struct{}),
 			status: StatusIdle,

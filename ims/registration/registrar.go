@@ -34,16 +34,20 @@ const (
 
 // Config specifies registration identity, transport security, and notifications.
 type Config struct {
-	PrivateIdentity           string
-	PublicIdentity            string
-	HomeDomain                string
-	UserAgent                 string
-	AccessNetworkInfo         string
-	WLANNodeID                string
-	RegisterExpires           time.Duration
-	IMEI                      string
-	AuthAlgorithm             string
-	RegistrationGroup         *Group
+	PrivateIdentity   string
+	PublicIdentity    string
+	HomeDomain        string
+	UserAgent         string
+	AccessNetworkInfo string
+	WLANNodeID        string
+	RegisterExpires   time.Duration
+	IMEI              string
+	AuthAlgorithm     string
+	RegistrationGroup *Group
+	// AKAGroup serializes USIM AKA with other users of the same card, such
+	// as SWu tunnels, when RegistrationGroup is nil. It does not enable
+	// multiple registration and is ignored when RegistrationGroup is set.
+	AKAGroup                  *Group
 	RegistrationID            uint32
 	RegistrationPreference    int
 	IPSecIntegrityAlgorithms  []string
@@ -114,6 +118,7 @@ type Registrar struct {
 	logger            *slog.Logger
 	attachment        session.Attachment
 	group             *Group
+	akaGroup          *Group
 	contactUser       string
 	keepAliveInterval func(time.Duration) time.Duration
 
@@ -197,12 +202,17 @@ func New(cfg Config, sess *session.Stack, card Card) (*Registrar, error) {
 	if group == nil {
 		group = &Group{}
 	}
+	akaGroup := group
+	if cfg.RegistrationGroup == nil && cfg.AKAGroup != nil {
+		akaGroup = cfg.AKAGroup
+	}
 	registrar := &Registrar{
 		cfg:               cfg,
 		sess:              sess,
 		card:              card,
 		logger:            cfg.Logger.With("component", "ims-registration"),
 		group:             group,
+		akaGroup:          akaGroup,
 		contactUser:       cryptorand.Text(),
 		keepAliveInterval: randomizedRegistrationKeepAliveInterval,
 		state: State{

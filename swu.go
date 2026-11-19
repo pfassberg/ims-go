@@ -9,7 +9,71 @@ import (
 
 	"github.com/damonto/ims-go/swu/handshake"
 	swutunnel "github.com/damonto/ims-go/swu/tunnel"
+	usim "github.com/damonto/wwan-go/sim"
 )
+
+// SWuConnectRequest returns the identity and USIM authentication needed to
+// open an additional SWu tunnel, for example to a data APN, with
+// swutunnel.Session.Connect. Each PDN connection over an ePDG uses its own
+// IKE SA (3GPP TS 24.302), so the extra tunnel needs its own EAP-AKA run
+// against the same USIM that the Client already owns.
+//
+// The USIM is loaded by Connect, so call this after Connect has succeeded at
+// least once; before that it returns ErrClientNotConnected.
+//
+// The returned AuthenticateAKA is serialized with every other USIM AKA of the
+// Client (SIP registration, its own tunnel, and other requests), including
+// RegistrationGroup ordering when one is configured. It fails with
+// ErrClientClosed once the Client is closed, because the reader is then closed.
+//
+// The returned Card exposes only the permanent identity. A tunnel opened with
+// it always runs full EAP-AKA and never reads or replaces the pseudonym and
+// fast re-authentication state used by the Client's own tunnel (RFC 4187
+// section 4.1 binds that state to one EAP peer context).
+// The caller owns any tunnel opened with the request: Client.Close does not
+// close it, and the caller must close it before or after closing the Client.
+func (c *Client) SWuConnectRequest() (swutunnel.ConnectRequest, error) {
+	var (
+		card   Card
+		cfg    Config
+		closed bool
+	)
+	c.withStateLock(func(s *clientState) {
+		card = c.card
+		cfg = c.cfg
+		closed = s.closed
+	})
+	if closed {
+		return swutunnel.ConnectRequest{}, fmt.Errorf("preparing swu connect request: %w", ErrClientClosed)
+	}
+	if card == nil {
+		return swutunnel.ConnectRequest{}, fmt.Errorf("preparing swu connect request: usim is not loaded: %w", ErrClientNotConnected)
+	}
+
+	authenticate := c.coordinatedAKA(cfg.IMS, card.EAPAKA)
+	return swutunnel.ConnectRequest{
+		IMEI: cfg.Terminal.ID,
+		// Not the USIM itself: the extra tunnel must not share the Client
+		// tunnel's EAP-AKA pseudonym and fast re-authentication state.
+		Card: swuSubscriberCard{imsi: card.IMSI(), mcc: card.MCC(), mnc: card.MNC()},
+		AuthenticateAKA: func(ctx context.Context, rand, autn []byte) (usim.AKAResult, error) {
+			if c.isClosed() {
+				return usim.AKAResult{}, fmt.Errorf("authenticating swu: %w", ErrClientClosed)
+			}
+			return authenticate(ctx, rand, autn)
+		},
+	}, nil
+}
+
+// swuSubscriberCard is a snapshot of the subscriber identity for tunnels
+// opened outside the Client. It deliberately lacks AKA identity storage.
+type swuSubscriberCard struct {
+	imsi, mcc, mnc string
+}
+
+func (c swuSubscriberCard) IMSI() string { return c.imsi }
+func (c swuSubscriberCard) MCC() string  { return c.mcc }
+func (c swuSubscriberCard) MNC() string  { return c.mnc }
 
 func (c *Client) openTunnel(ctx context.Context, setup *connectSetup) (swutunnel.Info, error) {
 	c.emitStatus(StatusAuthenticating)
@@ -34,7 +98,7 @@ func (c *Client) openTunnel(ctx context.Context, setup *connectSetup) (swutunnel
 			err = session.Connect(ctx, swutunnel.ConnectRequest{
 				IMEI:            c.cfg.Terminal.ID,
 				Card:            c.card,
-				AuthenticateAKA: setup.imsCfg.coordinatedAKA(c.card.EAPAKA),
+				AuthenticateAKA: c.coordinatedAKA(setup.imsCfg, c.card.EAPAKA),
 			})
 		}
 		if err == nil {

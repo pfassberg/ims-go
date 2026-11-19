@@ -127,7 +127,8 @@ func TestIMSConfigCoordinatedAKA(t *testing.T) {
 				calls++
 				return usim.AKAResult{RES: []byte("response")}, nil
 			}
-			got, err := tt.cfg.coordinatedAKA(authenticate)(t.Context(), make([]byte, 16), make([]byte, 16))
+			client := newClient(Config{Logger: testLogger()})
+			got, err := client.coordinatedAKA(tt.cfg, authenticate)(t.Context(), make([]byte, 16), make([]byte, 16))
 			if err != nil {
 				t.Fatalf("coordinatedAKA() error = %v", err)
 			}
