@@ -64,6 +64,42 @@ func TestNotifyRegInfoMatchesRewrittenContact(t *testing.T) {
 	}
 }
 
+func TestNotifyRegInfoMatchesContactWithoutUser(t *testing.T) {
+	transport := newTCPTransport(5062, 5060)
+	svc := newTestService(t, Config{}, transport, stubCard{})
+	svc.setRegistered(true)
+
+	var contact comparableSIPURI
+	if err := contact.UnmarshalText([]byte(svc.currentRegisterContactURI())); err != nil {
+		t.Fatalf("parsing Contact URI: %v", err)
+	}
+	notify := sip.NewRequest("NOTIFY", svc.currentRegisterContactURI())
+	notify.Headers.Add("Event", regEventPackage)
+	notify.Headers.Add("Content-Type", regInfoContentType)
+	// Shape seen from a live IMS core: the registrar reports the Contact
+	// without its user part, transport, or any other binding identifier.
+	notify.Body = fmt.Appendf(nil, `<?xml version="1.0"?>
+<reginfo xmlns="urn:ietf:params:xml:ns:reginfo" version="0" state="full">
+  <registration aor="%s" id="1795092229" state="active">
+    <contact id="1" state="active" event="created">
+      <uri>sip:%s</uri>
+    </contact>
+  </registration>
+</reginfo>`, svc.State().PublicIdentity, contact.hostPort)
+
+	handled, err := svc.HandleRequest(t.Context(), session.Request{Message: notify, Transport: transport})
+	if err != nil {
+		t.Fatalf("HandleRequest() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("HandleRequest() handled = false, want true")
+	}
+	if !svc.State().Registered {
+		t.Fatal("Registered = false, want true")
+	}
+	expectNoRegistrationEvent(t, svc)
+}
+
 func TestRegInfoRewrittenContactKeepsBindingIdentity(t *testing.T) {
 	const contactURI = "sip:CONTACTTOKEN@[2001:db8::10]:5062;transport=tcp"
 	tests := []struct {
@@ -78,6 +114,11 @@ func TestRegInfoRewrittenContactKeepsBindingIdentity(t *testing.T) {
 		{name: "another user", uri: "sip:OTHERCONTACT@192.0.2.200:5060"},
 		{name: "user is case sensitive", uri: "sip:contacttoken@192.0.2.200:5060"},
 		{name: "missing user", uri: "sip:192.0.2.200:5060"},
+		{name: "missing user at own address", uri: "sip:[2001:db8::10]:5062", want: true},
+		{name: "missing user at own address with transport", uri: "sip:[2001:db8:0::10]:5062;transport=tcp", want: true},
+		{name: "missing user at own host and another port", uri: "sip:[2001:db8::10]:5063"},
+		{name: "missing user at own address with another transport", uri: "sip:[2001:db8::10]:5062;transport=udp"},
+		{name: "missing user at own address with another flow", uri: "sip:[2001:db8::10]:5062", regID: "2"},
 		{name: "another scheme", uri: "sips:CONTACTTOKEN@192.0.2.200:5060"},
 		{name: "missing host", uri: "sip:CONTACTTOKEN@"},
 	}

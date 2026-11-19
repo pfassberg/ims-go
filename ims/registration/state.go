@@ -91,13 +91,16 @@ func sameRegisterContactURI(got, want string) bool {
 		!sameSIPHostPort(gotURI.hostPort, wantURI.hostPort) {
 		return false
 	}
-	gotTransport, gotHasTransport := gotURI.parameters["transport"]
-	wantTransport, wantHasTransport := wantURI.parameters["transport"]
-	if gotHasTransport && wantHasTransport && gotTransport != wantTransport {
-		return false
-	}
 	// Some IMS registrars omit the transport parameter in the response.
-	return true
+	return compatibleURITransport(gotURI, wantURI)
+}
+
+// compatibleURITransport reports whether two URIs do not name different
+// transports. A missing transport parameter is compatible with any transport.
+func compatibleURITransport(got, want comparableSIPURI) bool {
+	gotTransport, gotHasTransport := got.parameters["transport"]
+	wantTransport, wantHasTransport := want.parameters["transport"]
+	return !gotHasTransport || !wantHasTransport || gotTransport == wantTransport
 }
 
 func sameContactURI(got, want string) bool {

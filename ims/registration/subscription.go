@@ -750,6 +750,15 @@ func contactMatchesCurrentBinding(contact regInfoContact, state State, contactUR
 	if gotErr == nil && wantErr == nil && got.scheme == want.scheme && want.userinfo != "" && got.userinfo == want.userinfo {
 		return true
 	}
+	// Other IMS registrars drop the Contact user in reginfo and report only
+	// the UE address and protected port, for example sip:[2001:db8::5]:33011.
+	// That address belongs to this UE's IMS PDN connection and the port to its
+	// own IPsec flow, so a user-less URI at exactly that host and port still
+	// identifies the current binding.
+	if gotErr == nil && wantErr == nil && got.scheme == want.scheme && got.userinfo == "" &&
+		sameSIPHostPort(got.hostPort, want.hostPort) && compatibleURITransport(got, want) {
+		return true
+	}
 	instance := contactSIPInstance(contact)
 	if instance != "" && strings.EqualFold(instance, currentSIPInstance(state)) {
 		if state.registrationID == 0 || regID == state.registrationID {
