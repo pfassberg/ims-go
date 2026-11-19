@@ -183,6 +183,7 @@ func applyTunnelAddresses(tunnel *Info, config ike.ConfigPayload, cfg handshake.
 	tunnel.InnerIPv6 = cloneIPAddress(addresses.internalIPv6)
 	tunnel.InnerIPv6Prefix = cloneIPPrefix(addresses.internalIPv6Prefix)
 	tunnel.PCSCFIPs = pcscfCandidates(addresses)
+	tunnel.DNSServers = cloneIPList(addresses.dnsServers)
 	switch {
 	case len(tunnel.InnerIPv4) != 0 || !tunnel.InnerIPv6.IsZero():
 		return nil
@@ -212,6 +213,7 @@ type tunnelAddressSet struct {
 	internalIPv6Prefix handshake.IPPrefix
 	pcscfIPv4          []net.IP
 	pcscfIPv6          []net.IP
+	dnsServers         []net.IP
 }
 
 const (
@@ -257,6 +259,22 @@ func tunnelAddresses(attrs []ike.Attribute, pcscfIPv4Attr, pcscfIPv6Attr uint16)
 			}
 			addresses.internalIPv6 = address
 			addresses.internalIPv6Prefix = ipv6Prefix(address.IP, address.PrefixLen)
+		case configAttrInternalIPv4DNS, configAttrInternalIPv6DNS:
+			// The request carries empty DNS attributes; replies repeat the
+			// attribute once per server (RFC 7296 section 3.15.1).
+			if len(attr.Value) == 0 {
+				continue
+			}
+			want := net.IPv4len
+			name := "internal ipv4 dns"
+			if attr.Type == configAttrInternalIPv6DNS {
+				want = net.IPv6len
+				name = "internal ipv6 dns"
+			}
+			if len(attr.Value) != want {
+				return tunnelAddressSet{}, configAttributeLengthError(name, len(attr.Value), want)
+			}
+			addresses.dnsServers = appendUniqueIP(addresses.dnsServers, net.IP(attr.Value))
 		case configAttrInternalIPv6Subnet:
 			if len(attr.Value) == 0 {
 				continue

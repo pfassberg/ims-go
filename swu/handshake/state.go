@@ -77,6 +77,7 @@ type Info struct {
 	InnerIPv6Prefix           IPPrefix
 	PDNTypeRestriction        PDNType
 	PCSCFIPs                  []net.IP
+	DNSServers                []net.IP
 	ESPInitiatorSPI           uint32
 	ESPResponderSPI           uint32
 	Encryption                uint16

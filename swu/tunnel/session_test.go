@@ -5561,3 +5561,80 @@ func TestExpiredChildSAIsDiscardedBeforeUse(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteIPPacketKeepsOriginalHeader(t *testing.T) {
+	// ICMP echo request from 10.0.0.1 to 1.1.1.1 with TTL 7, ID 0x1234 and DF,
+	// none of which WriteInnerPacket would preserve.
+	icmp := []byte{8, 0, 0, 0, 0, 1, 0, 1, 'p', 'i', 'n', 'g'}
+	binary.BigEndian.PutUint16(icmp[2:4], ^checksum16(icmp))
+	ip := make([]byte, 20, 20+len(icmp))
+	ip[0] = 0x45
+	ip[1] = 0xb8
+	binary.BigEndian.PutUint16(ip[2:4], uint16(20+len(icmp)))
+	binary.BigEndian.PutUint16(ip[4:6], 0x1234)
+	binary.BigEndian.PutUint16(ip[6:8], 0x4000)
+	ip[8] = 7
+	ip[9] = packet.ProtocolICMP
+	copy(ip[12:16], net.IPv4(10, 0, 0, 1).To4())
+	copy(ip[16:20], net.IPv4(1, 1, 1, 1).To4())
+	binary.BigEndian.PutUint16(ip[10:12], ^checksum16(ip[:20]))
+	ip = append(ip, icmp...)
+
+	conn := &fakePacketConn{local: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 40000}}
+	codec := esp.Codec{SPI: 0x10203040, Encryption: esp.EncryptionNull, Integrity: esp.IntegrityHMACSHA196, IntegrityKey: bytes.Repeat([]byte{0x11}, 20)}
+	session := mustDialSession(t, conn)
+	session.mu.Lock()
+	session.connected = true
+	session.outerNAT = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4500}
+	session.outboundESP = codec
+	session.tunnel = Info{
+		ESPResponderSPI:           codec.SPI,
+		InitiatorTrafficSelectors: ike.TrafficSelectorsAny(),
+		ResponderTrafficSelectors: ike.TrafficSelectorsAny(),
+	}
+	session.mu.Unlock()
+
+	if err := session.WriteIPPacket(t.Context(), ip); err != nil {
+		t.Fatalf("WriteIPPacket() error = %v", err)
+	}
+	if len(conn.writes) != 1 {
+		t.Fatalf("writes = %d, want 1", len(conn.writes))
+	}
+	got, err := codec.Decode(conn.writes[0])
+	if err != nil {
+		t.Fatalf("decoding written ESP: %v", err)
+	}
+	if got.NextHeader != packet.OuterIPv4 {
+		t.Errorf("ESP next header = %d, want %d", got.NextHeader, packet.OuterIPv4)
+	}
+	if !bytes.Equal(got.Payload, ip) {
+		t.Fatalf("ESP payload =\n% x\nwant unchanged packet\n% x", got.Payload, ip)
+	}
+}
+
+func TestWriteIPPacketRejectsMalformedPacket(t *testing.T) {
+	conn := &fakePacketConn{local: &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 40000}}
+	session := mustDialSession(t, conn)
+	for _, data := range [][]byte{nil, {0x45, 0, 0}, {0x70, 0, 0, 0}} {
+		if err := session.WriteIPPacket(t.Context(), data); err == nil {
+			t.Errorf("WriteIPPacket(% x) error = nil, want error", data)
+		}
+	}
+	if len(conn.writes) != 0 {
+		t.Fatalf("writes = %d, want 0", len(conn.writes))
+	}
+}
+
+func checksum16(data []byte) uint16 {
+	var sum uint32
+	for i := 0; i+1 < len(data); i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(data[i:]))
+	}
+	if len(data)%2 == 1 {
+		sum += uint32(data[len(data)-1]) << 8
+	}
+	for sum > 0xffff {
+		sum = (sum >> 16) + (sum & 0xffff)
+	}
+	return uint16(sum)
+}

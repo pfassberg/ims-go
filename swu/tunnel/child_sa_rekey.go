@@ -844,6 +844,7 @@ func cloneInfo(info Info) Info {
 		InnerIPv6Prefix:           cloneIPPrefix(info.InnerIPv6Prefix),
 		PDNTypeRestriction:        info.PDNTypeRestriction,
 		PCSCFIPs:                  cloneIPList(info.PCSCFIPs),
+		DNSServers:                cloneIPList(info.DNSServers),
 		ESPInitiatorSPI:           info.ESPInitiatorSPI,
 		ESPResponderSPI:           info.ESPResponderSPI,
 		Encryption:                info.Encryption,

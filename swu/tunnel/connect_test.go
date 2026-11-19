@@ -2308,3 +2308,85 @@ func mustUnmarshalIKEPacket(t *testing.T, wire []byte) ike.Packet {
 	}
 	return packet
 }
+
+func TestApplyTunnelAddressesKeepsDNSServers(t *testing.T) {
+	tests := []struct {
+		name    string
+		attrs   []ike.Attribute
+		want    []net.IP
+		wantErr string
+	}{
+		{
+			name: "ipv4 servers in reply order",
+			attrs: []ike.Attribute{
+				ike.NewTLVAttribute(configAttrInternalIPv4Address, net.IPv4(10, 150, 0, 11).To4()),
+				ike.NewTLVAttribute(configAttrInternalIPv4DNS, net.IPv4(192, 0, 2, 4).To4()),
+				ike.NewTLVAttribute(configAttrInternalIPv4DNS, net.IPv4(192, 0, 2, 2).To4()),
+			},
+			want: []net.IP{net.IPv4(192, 0, 2, 4), net.IPv4(192, 0, 2, 2)},
+		},
+		{
+			name: "dual stack with duplicate and empty attributes",
+			attrs: []ike.Attribute{
+				ike.NewTLVAttribute(configAttrInternalIPv6Address, append(net.ParseIP("2001:db8::1").To16(), 64)),
+				ike.NewTLVAttribute(configAttrInternalIPv6DNS, nil),
+				ike.NewTLVAttribute(configAttrInternalIPv6DNS, net.ParseIP("2001:db8::53").To16()),
+				ike.NewTLVAttribute(configAttrInternalIPv6DNS, net.ParseIP("2001:db8::53").To16()),
+				ike.NewTLVAttribute(configAttrInternalIPv4DNS, net.IPv4(192, 0, 2, 4).To4()),
+			},
+			want: []net.IP{net.ParseIP("2001:db8::53"), net.IPv4(192, 0, 2, 4)},
+		},
+		{
+			name: "no dns",
+			attrs: []ike.Attribute{
+				ike.NewTLVAttribute(configAttrInternalIPv4Address, net.IPv4(10, 150, 0, 11).To4()),
+			},
+		},
+		{
+			name: "ipv4 dns with wrong length",
+			attrs: []ike.Attribute{
+				ike.NewTLVAttribute(configAttrInternalIPv4Address, net.IPv4(10, 150, 0, 11).To4()),
+				ike.NewTLVAttribute(configAttrInternalIPv4DNS, []byte{192, 0, 2, 4, 0}),
+			},
+			wantErr: "internal ipv4 dns length 5, want 4",
+		},
+		{
+			name: "ipv6 dns with wrong length",
+			attrs: []ike.Attribute{
+				ike.NewTLVAttribute(configAttrInternalIPv6Address, append(net.ParseIP("2001:db8::1").To16(), 64)),
+				ike.NewTLVAttribute(configAttrInternalIPv6DNS, append(net.ParseIP("2001:db8::53").To16(), 64)),
+			},
+			wantErr: "internal ipv6 dns length 17, want 16",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tunnel := Info{}
+			err := applyTunnelAddresses(&tunnel, ike.ConfigPayload{Attributes: tt.attrs}, handshake.Config{})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("applyTunnelAddresses() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("applyTunnelAddresses() error = %v", err)
+			}
+			if len(tunnel.DNSServers) != len(tt.want) {
+				t.Fatalf("DNSServers = %v, want %v", tunnel.DNSServers, tt.want)
+			}
+			for i := range tt.want {
+				if !tunnel.DNSServers[i].Equal(tt.want[i]) {
+					t.Fatalf("DNSServers = %v, want %v", tunnel.DNSServers, tt.want)
+				}
+			}
+			clone := cloneInfo(tunnel)
+			if len(clone.DNSServers) > 0 {
+				clone.DNSServers[0][0] ^= 0xff
+				if tunnel.DNSServers[0].Equal(clone.DNSServers[0]) {
+					t.Fatal("cloneInfo() shares DNSServers memory")
+				}
+			}
+		})
+	}
+}
