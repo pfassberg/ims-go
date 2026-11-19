@@ -77,6 +77,7 @@ func (s *Session) connectAttempt(ctx context.Context, state *connectState) error
 	if err := s.exchangeIKESAInit(ctx, state); err != nil {
 		return err
 	}
+	s.logIKEKeys(state.crypto)
 	s.logger.Info("IKE_SA_INIT established", "initiator_spi", state.initiatorSPI, "responder_spi", state.responderSPI, "natt_supported", state.nattSupported, "nat_detected", state.natDetected, "ike_fragmentation_supported", state.ikeFragmentationSupported)
 	if err := s.exchangeIKEAuth(ctx, state); err != nil {
 		return err
