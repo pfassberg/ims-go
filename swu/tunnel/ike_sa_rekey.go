@@ -469,6 +469,7 @@ func (s *Session) deleteRedundantIKESA(ctx context.Context, peer *net.UDPAddr, r
 }
 
 func (s *Session) installIKESecurityAssociation(result ikeSARekeyResult) {
+	s.logIKEKeys(result.crypto)
 	now := time.Now()
 	s.mu.Lock()
 	waiters := s.informWaiters

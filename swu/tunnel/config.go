@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"strings"
@@ -58,7 +59,13 @@ type Config struct {
 	ChildSAByteLifetime              uint64
 	ChildSAByteRekeyMargin           uint64
 	AddKEToChildSARekey              bool
-	Logger                           *slog.Logger
+	// KeyLog, when set, receives the keys of every IKE SA, including rekeyed
+	// ones, as lines of Wireshark's ikev2_decryption_table file so that
+	// packet captures can be decrypted. The keys protect EAP-AKA and the
+	// tunnel configuration, so set it only for debugging. Lines from all
+	// sessions are serialized, so one writer may be shared.
+	KeyLog io.Writer
+	Logger *slog.Logger
 }
 
 const (
