@@ -111,6 +111,24 @@ func (s *Session) WriteInnerPacket(ctx context.Context, pkt packet.InnerPacket) 
 	return s.writeInner(ctx, pkt, wire, nextHeader)
 }
 
+// WriteIPPacket protects one complete IPv4 or IPv6 packet and sends it through
+// the tunnel unchanged. Unlike WriteInnerPacket, which rebuilds the IP header,
+// it keeps the TTL or hop limit, identification, flags, fragment fields, TOS
+// or traffic class, and options, as a router forwarding traffic must. The
+// packet must still match the child SA traffic selectors. data is not
+// retained after WriteIPPacket returns.
+func (s *Session) WriteIPPacket(ctx context.Context, data []byte) error {
+	var pkt packet.InnerPacket
+	if err := pkt.UnmarshalBinary(data); err != nil {
+		return fmt.Errorf("writing ip packet: %w", err)
+	}
+	nextHeader, err := pkt.OuterNextHeader()
+	if err != nil {
+		return fmt.Errorf("writing ip packet: %w", err)
+	}
+	return s.writeInner(ctx, pkt, pkt.OriginalWire(), nextHeader)
+}
+
 func (s *Session) readLoop() {
 	defer s.wg.Done()
 	buf := make([]byte, maxUDPPacketSize)

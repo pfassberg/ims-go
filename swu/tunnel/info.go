@@ -10,12 +10,15 @@ import (
 )
 
 type Info struct {
-	APN                       string
-	InnerIPv4                 net.IP
-	InnerIPv6                 handshake.IPAddress
-	InnerIPv6Prefix           handshake.IPPrefix
-	PDNTypeRestriction        handshake.PDNType
-	PCSCFIPs                  []net.IP
+	APN                string
+	InnerIPv4          net.IP
+	InnerIPv6          handshake.IPAddress
+	InnerIPv6Prefix    handshake.IPPrefix
+	PDNTypeRestriction handshake.PDNType
+	PCSCFIPs           []net.IP
+	// DNSServers lists INTERNAL_IP4_DNS and INTERNAL_IP6_DNS from the
+	// CFG_REPLY (RFC 7296 section 3.15.1) in the order the network sent them.
+	DNSServers                []net.IP
 	ESPInitiatorSPI           uint32
 	ESPResponderSPI           uint32
 	Encryption                uint16
@@ -138,6 +141,7 @@ func handshakeInfo(info Info) handshake.Info {
 		InnerIPv6Prefix:           cloneIPPrefix(info.InnerIPv6Prefix),
 		PDNTypeRestriction:        info.PDNTypeRestriction,
 		PCSCFIPs:                  cloneIPList(info.PCSCFIPs),
+		DNSServers:                cloneIPList(info.DNSServers),
 		ESPInitiatorSPI:           info.ESPInitiatorSPI,
 		ESPResponderSPI:           info.ESPResponderSPI,
 		Encryption:                info.Encryption,
@@ -159,6 +163,7 @@ func infoFromHandshake(info handshake.Info) Info {
 		InnerIPv6Prefix:           cloneIPPrefix(info.InnerIPv6Prefix),
 		PDNTypeRestriction:        info.PDNTypeRestriction,
 		PCSCFIPs:                  cloneIPList(info.PCSCFIPs),
+		DNSServers:                cloneIPList(info.DNSServers),
 		ESPInitiatorSPI:           info.ESPInitiatorSPI,
 		ESPResponderSPI:           info.ESPResponderSPI,
 		Encryption:                info.Encryption,
